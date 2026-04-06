@@ -1,0 +1,461 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-kanban"></i> Project Dashboard</h2>
+    <div>
+        {% if user.role in ['ADMIN', 'MANAGER'] %}
+        <a href="/projects/create" class="btn btn-primary me-2"><i class="bi bi-plus-circle"></i> New Project</a>
+        <a href="/projects/upload" class="btn btn-outline-primary"><i class="bi bi-upload"></i> Upload CSV</a>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="row mb-4">
+    <div class="col-md-3 mb-3">
+        <div class="card card-stat stat-total">
+            <div class="card-body text-center py-3">
+                <i class="bi bi-folder2-open stat-icon"></i>
+                <h3 class="mb-0">{{ total_projects }}</h3>
+                <small class="opacity-75">Total Projects</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card card-stat stat-safe">
+            <div class="card-body text-center py-3">
+                <i class="bi bi-shield-check stat-icon"></i>
+                <h3 class="mb-0">{{ risk_counts.Safe }}</h3>
+                <small class="opacity-75">Safe</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card card-stat stat-warn">
+            <div class="card-body text-center py-3">
+                <i class="bi bi-exclamation-triangle stat-icon"></i>
+                <h3 class="mb-0">{{ risk_counts.Warning }}</h3>
+                <small class="opacity-75">Warning</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card card-stat stat-danger">
+            <div class="card-body text-center py-3">
+                <i class="bi bi-fire stat-icon"></i>
+                <h3 class="mb-0">{{ risk_counts['High Risk'] }}</h3>
+                <small class="opacity-75">High Risk</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ───────── Charts Section ───────── -->
+{% if project_data %}
+<div class="row mb-4">
+    <!-- Risk Distribution Pie -->
+    <div class="col-md-4 mb-3">
+        <div class="card h-100">
+            <div class="card-header bg-white fw-semibold"><i class="bi bi-pie-chart"></i> Risk Distribution</div>
+            <div class="card-body d-flex align-items-center justify-content-center">
+                <canvas id="riskPieChart"></canvas>
+            </div>
+        </div>
+    </div>
+    <!-- Status Distribution Pie -->
+    <div class="col-md-4 mb-3">
+        <div class="card h-100">
+            <div class="card-header bg-white fw-semibold"><i class="bi bi-pie-chart-fill"></i> Status Breakdown</div>
+            <div class="card-body d-flex align-items-center justify-content-center">
+                <canvas id="statusPieChart"></canvas>
+            </div>
+        </div>
+    </div>
+    <!-- Manager Workload Bar (ADMIN) / Overrun Top 10 (others) -->
+    <div class="col-md-4 mb-3">
+        <div class="card h-100">
+            {% if user.role == 'ADMIN' %}
+            <div class="card-header bg-white fw-semibold"><i class="bi bi-people"></i> Manager Workload</div>
+            <div class="card-body d-flex align-items-center justify-content-center">
+                <canvas id="managerBarChart"></canvas>
+            </div>
+            {% else %}
+            <div class="card-header bg-white fw-semibold"><i class="bi bi-bar-chart"></i> Top Overruns</div>
+            <div class="card-body d-flex align-items-center justify-content-center">
+                <canvas id="overrunBarChart"></canvas>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Row 2: Overrun bar (ADMIN gets it here) + Cost bar (non-VIEWER) -->
+<div class="row mb-4">
+    {% if user.role == 'ADMIN' %}
+    <div class="col-md-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header bg-white fw-semibold"><i class="bi bi-bar-chart"></i> Top 10 Cost Overruns (%)</div>
+            <div class="card-body">
+                <canvas id="overrunBarChart"></canvas>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    {% if user.role != 'VIEWER' %}
+    <div class="col-md-{{ '6' if user.role == 'ADMIN' else '12' }} mb-3">
+        <div class="card h-100">
+            <div class="card-header bg-white fw-semibold"><i class="bi bi-cash-stack"></i> Planned vs Actual Cost (Top 12)</div>
+            <div class="card-body">
+                <canvas id="costBarChart"></canvas>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+<!-- ───────── End Charts Section ───────── -->
+
+<!-- Filter Controls -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <div class="row align-items-center">
+            <div class="col-md-4">
+                <input type="text" id="searchInput" class="form-control form-control-sm" placeholder="Search projects...">
+            </div>
+            <div class="col-md-3">
+                <select id="riskFilter" class="form-select form-select-sm">
+                    <option value="">All Risks</option>
+                    <option value="Safe">Safe</option>
+                    <option value="Warning">Warning</option>
+                    <option value="High Risk">High Risk</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select id="statusFilter" class="form-select form-select-sm">
+                    <option value="">All Statuses</option>
+                    <option value="Overrun">Overrun</option>
+                    <option value="Underrun">Underrun</option>
+                    <option value="Active">Active</option>
+                    <option value="Completed">Completed</option>
+                    <option value="On Hold">On Hold</option>
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Projects Table -->
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0" id="projectsTable">
+                <thead class="table-dark">
+                    <tr>
+                        <th>ID</th>
+                        <th>Project Name</th>
+                        <th>MCC</th>
+                        <th>Segment</th>
+                        <th>Manager</th>
+                        <th>Status</th>
+                        <th>Risk</th>
+                        <th>Overrun %</th>
+                        {% if user.role != 'VIEWER' %}
+                        <th>Planned Cost</th>
+                        <th>Actual Cost</th>
+                        <th>$ Impact</th>
+                        {% endif %}
+                        <th>Service Line</th>
+                        {% if user.role in ['ADMIN', 'MANAGER'] %}
+                        <th>Actions</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in project_data %}
+                    {% set p = item.project %}
+                    {% set pred = item.prediction %}
+                    <tr class="project-row"
+                        data-name="{{ p.name|lower }}"
+                        data-risk="{{ pred.predicted_risk if pred else '' }}"
+                        data-status="{{ p.status|lower if p.status else '' }}">
+                        <td>{{ p.id }}</td>
+                        <td><strong>{{ p.name }}</strong></td>
+                        <td><small>{{ p.mcc or '-' }}</small></td>
+                        <td><small>{{ p.segment or '-' }}</small></td>
+                        <td><small>{{ item.manager_name }}</small></td>
+                        <td>
+                            {% if p.status == 'Overrun' %}
+                            <span class="badge bg-danger">Overrun</span>
+                            {% elif p.status == 'Underrun' %}
+                            <span class="badge bg-success">Underrun</span>
+                            {% else %}
+                            <span class="badge bg-secondary">{{ p.status or 'N/A' }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if pred %}
+                                {% if pred.predicted_risk == 'Safe' %}
+                                    <span class="badge badge-safe">Safe</span>
+                                {% elif pred.predicted_risk == 'Warning' %}
+                                    <span class="badge badge-warning">Warning</span>
+                                {% elif pred.predicted_risk == 'High Risk' %}
+                                    <span class="badge badge-high">High Risk</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{{ pred.predicted_risk }}</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="badge bg-secondary">N/A</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if pred %}
+                                <span class="{% if pred.predicted_overrun > 20 %}text-danger fw-bold{% elif pred.predicted_overrun > 10 %}text-warning{% else %}text-success{% endif %}">
+                                    {{ "%.1f"|format(pred.predicted_overrun) }}%
+                                </span>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        {% if user.role != 'VIEWER' %}
+                        <td>${{ (p.planned_cost or 0)|currency }}</td>
+                        <td>${{ (p.actual_cost or 0)|currency }}</td>
+                        <td>
+                            {% if p.dollar_impact %}
+                                <span class="{% if p.dollar_impact > 0 %}text-danger{% else %}text-success{% endif %}">
+                                    ${{ p.dollar_impact|currency }}
+                                </span>
+                            {% else %}-{% endif %}
+                        </td>
+                        {% endif %}
+                        <td><small class="text-muted">{{ p.service_line or p.tech_stack or '-' }}</small></td>
+                        {% if user.role in ['ADMIN', 'MANAGER'] %}
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <a href="/projects/edit/{{ p.id }}" class="btn btn-outline-primary" title="Edit">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                                <form method="POST" action="/projects/delete/{{ p.id }}" style="display:inline;"
+                                      onsubmit="return confirm('Are you sure you want to delete this project?');">
+                                    <button type="submit" class="btn btn-outline-danger" title="Delete">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<nav class="mt-3">
+    <ul class="pagination justify-content-center">
+        <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+            <a class="page-link" href="/projects?page={{ page - 1 }}">Previous</a>
+        </li>
+        {% for p_num in range(1, total_pages + 1) %}
+            {% if p_num == page or p_num == 1 or p_num == total_pages or (p_num >= page - 2 and p_num <= page + 2) %}
+            <li class="page-item {% if p_num == page %}active{% endif %}">
+                <a class="page-link" href="/projects?page={{ p_num }}">{{ p_num }}</a>
+            </li>
+            {% elif p_num == page - 3 or p_num == page + 3 %}
+            <li class="page-item disabled"><span class="page-link">...</span></li>
+            {% endif %}
+        {% endfor %}
+        <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+            <a class="page-link" href="/projects?page={{ page + 1 }}">Next</a>
+        </li>
+    </ul>
+    <p class="text-center text-muted small">Showing page {{ page }} of {{ total_pages }} ({{ total_projects }} projects total)</p>
+</nav>
+{% endif %}
+
+{% if not project_data %}
+<div class="text-center py-5">
+    <i class="bi bi-inbox" style="font-size: 3rem; color: #ccc;"></i>
+    <p class="text-muted mt-2">No projects found.
+        {% if user.role in ['ADMIN', 'MANAGER'] %}
+        <a href="/projects/create">Create your first project</a>.
+        {% endif %}
+    </p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+    // ── Filter logic (unchanged) ──
+    document.getElementById('searchInput').addEventListener('input', filterProjects);
+    document.getElementById('riskFilter').addEventListener('change', filterProjects);
+    document.getElementById('statusFilter').addEventListener('change', filterProjects);
+
+    function filterProjects() {
+        const search = document.getElementById('searchInput').value.toLowerCase();
+        const risk = document.getElementById('riskFilter').value;
+        const status = document.getElementById('statusFilter').value.toLowerCase();
+        const rows = document.querySelectorAll('.project-row');
+
+        rows.forEach(row => {
+            const name = row.dataset.name;
+            const rowRisk = row.dataset.risk;
+            const rowStatus = row.dataset.status;
+
+            const matchSearch = !search || name.includes(search);
+            const matchRisk = !risk || rowRisk === risk;
+            const matchStatus = !status || rowStatus === status;
+
+            row.style.display = (matchSearch && matchRisk && matchStatus) ? '' : 'none';
+        });
+    }
+
+    // ── Charts ──
+    const cd = {{ chart_data_json|safe }};
+
+    // Color palettes
+    const riskColors = ['#198754', '#ffc107', '#dc3545'];
+    const statusPalette = ['#0d6efd', '#198754', '#ffc107', '#dc3545', '#6c757d', '#0dcaf0', '#6610f2'];
+
+    // 1. Risk Pie Chart
+    if (document.getElementById('riskPieChart')) {
+        new Chart(document.getElementById('riskPieChart'), {
+            type: 'doughnut',
+            data: {
+                labels: cd.risk_labels,
+                datasets: [{
+                    data: cd.risk_values,
+                    backgroundColor: riskColors,
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { position: 'bottom', labels: { padding: 12 } }
+                }
+            }
+        });
+    }
+
+    // 2. Status Pie Chart
+    if (document.getElementById('statusPieChart')) {
+        new Chart(document.getElementById('statusPieChart'), {
+            type: 'doughnut',
+            data: {
+                labels: cd.status_labels,
+                datasets: [{
+                    data: cd.status_values,
+                    backgroundColor: statusPalette.slice(0, cd.status_labels.length),
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { position: 'bottom', labels: { padding: 12 } }
+                }
+            }
+        });
+    }
+
+    // 3. Top Overrun Bar Chart
+    if (document.getElementById('overrunBarChart')) {
+        new Chart(document.getElementById('overrunBarChart'), {
+            type: 'bar',
+            data: {
+                labels: cd.overrun_labels,
+                datasets: [{
+                    label: 'Overrun %',
+                    data: cd.overrun_values,
+                    backgroundColor: cd.overrun_values.map(v => v > 20 ? '#dc3545' : v > 10 ? '#ffc107' : '#198754'),
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { beginAtZero: true, title: { display: true, text: 'Overrun %' } }
+                }
+            }
+        });
+    }
+
+    // 4. Manager Workload Bar (ADMIN only)
+    if (document.getElementById('managerBarChart')) {
+        new Chart(document.getElementById('managerBarChart'), {
+            type: 'bar',
+            data: {
+                labels: cd.manager_labels,
+                datasets: [{
+                    label: 'Projects',
+                    data: cd.manager_values,
+                    backgroundColor: statusPalette.slice(0, cd.manager_labels.length),
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, ticks: { stepSize: 1 } }
+                }
+            }
+        });
+    }
+
+    // 5. Cost: Planned vs Actual (non-VIEWER)
+    if (document.getElementById('costBarChart')) {
+        new Chart(document.getElementById('costBarChart'), {
+            type: 'bar',
+            data: {
+                labels: cd.cost_labels,
+                datasets: [
+                    {
+                        label: 'Planned Cost',
+                        data: cd.cost_planned,
+                        backgroundColor: 'rgba(13, 110, 253, 0.7)',
+                        borderRadius: 4
+                    },
+                    {
+                        label: 'Actual Cost',
+                        data: cd.cost_actual,
+                        backgroundColor: 'rgba(220, 53, 69, 0.7)',
+                        borderRadius: 4
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { position: 'top' },
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                return ctx.dataset.label + ': $' + ctx.parsed.y.toLocaleString();
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(v) { return '$' + (v / 1000).toFixed(0) + 'K'; }
+                        }
+                    },
+                    x: { ticks: { maxRotation: 45, minRotation: 30 } }
+                }
+            }
+        });
+    }
+</script>
+{% endblock %}
