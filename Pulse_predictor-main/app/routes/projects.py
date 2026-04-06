@@ -35,7 +35,10 @@ async def list_projects(
     error = request.query_params.get("error", "")
 
     # ── Pagination at DB level ──
-    page = int(request.query_params.get("page", 1))
+    try:
+        page = int(request.query_params.get("page", 1))
+    except (ValueError, TypeError):
+        page = 1
     per_page = 50
     total_projects = db.query(sa_func.count(Project.id)).filter(base_filter).scalar()
     total_pages = max(1, (total_projects + per_page - 1) // per_page)

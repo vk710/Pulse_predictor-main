@@ -22,11 +22,20 @@ print("  Project Pulse Predictor - Model Training (Real Data)")
 print("=" * 60)
 
 # ── Load Real Data ──
-print("\n[1/5] Loading real project data from data/sample_data.csv...")
+print("\n[1/5] Loading real project data...")
 
-csv_path = os.path.join(os.path.dirname(__file__), "data", "sample_data.csv")
-df = pd.read_csv(csv_path)
-print(f"   Loaded {len(df)} projects")
+# Use combined training data (all 5 quarterly sheets) for better model generalization
+training_csv = os.path.join(os.path.dirname(__file__), "data", "training_data.csv")
+if os.path.exists(training_csv):
+    df = pd.read_csv(training_csv)
+    print(f"   Loaded {len(df)} projects from training_data.csv (all quarters)")
+    if "quarter" in df.columns:
+        print(f"   Quarters: {df['quarter'].value_counts().to_dict()}")
+else:
+    # Fallback to sample_data.csv (single quarter)
+    csv_path = os.path.join(os.path.dirname(__file__), "data", "sample_data.csv")
+    df = pd.read_csv(csv_path)
+    print(f"   Loaded {len(df)} projects from sample_data.csv (single quarter)")
 
 # ── Feature Engineering ──
 print("[2/5] Computing engineered features...")

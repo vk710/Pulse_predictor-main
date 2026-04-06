@@ -30,7 +30,10 @@ async def list_alerts(
         base_filter = True
 
     # Pagination
-    page = int(request.query_params.get("page", 1))
+    try:
+        page = int(request.query_params.get("page", 1))
+    except (ValueError, TypeError):
+        page = 1
     per_page = 50
     total_alerts = db.query(sa_func.count(Alert.alert_id)).filter(base_filter).scalar()
     total_pages = max(1, (total_alerts + per_page - 1) // per_page)

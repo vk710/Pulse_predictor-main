@@ -45,6 +45,7 @@ class Project(Base):
     project_margin_baseline = Column(Float) # Baseline project margin %
     project_margin_latest = Column(Float)   # Latest project margin %
     onsite_mix_pct = Column(Float)          # Baseline onsite mix %
+    quarter = Column(String)                # Data quarter (e.g. Dec25, Sep25)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
 
